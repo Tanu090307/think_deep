@@ -7,11 +7,18 @@ router = APIRouter()
 
 
 @router.post("/upload-book")
-async def upload_book(file: UploadFile = File(...)):
+def upload_book(file: UploadFile = File(...)):
+
+    # Optional: Skip rebuilding if index already exists
+    if vector_store.load_index():
+        return {
+            "message": "Index already exists. Skipping rebuild."
+        }
+
     if not file.filename.endswith(".pdf"):
         return {"error": "Only PDF files are allowed"}
 
-    pdf_bytes = await file.read()
+    pdf_bytes = file.file.read()
     text = ""
 
     with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
@@ -20,10 +27,22 @@ async def upload_book(file: UploadFile = File(...)):
 
     cleaned_text = clean_text(text)
     chunks = chunk_text(cleaned_text)
+
+    print("Total chunks before limiting:", len(chunks))
+
+    # 🔥 Development limit (increase from 150)
+    chunks = chunks[:600]
+
+    print("Total chunks after limiting:", len(chunks))
+
+    if not chunks:
+        return {"error": "No readable text found in PDF"}
+
     vector_store.build_index(chunks)
 
     return {
-    "filename": file.filename,
-    "chunks_indexed": len(chunks),
-    "preview_chunk": chunks[0][:500]
-}
+        "filename": file.filename,
+        "chunks_indexed": len(chunks),
+        "preview_chunk": chunks[0][:150]
+    }
+
